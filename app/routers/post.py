@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session  # database connection
 import models  # ORM model tables
 import schema  # Schemas for POST APIs
 import oauth2
+from sqlalchemy import func
 from database import get_db  # Database connection
 from typing import List, Optional
 
@@ -16,7 +17,7 @@ router = APIRouter(
  
 
 # Getting all post info from database
-@router.get("/", response_model=List[schema.Post])
+@router.get("/", response_model=List[schema.PostOut])
 def get_post(db: Session = Depends(get_db),
              current_user: int = Depends(oauth2.get_current_user),
              limit: int = 10, skip: int = 0,
@@ -26,7 +27,13 @@ def get_post(db: Session = Depends(get_db),
     # posts = db.query(models.Post).filter(models.Post.owner_id == current_user.id).all()
 
     # This one returns all post from all users
-    posts = db.query(models.Post).filter(models.Post.title.contains(search)).limit(limit).offset(skip).all()
+
+    # posts = db.query(models.Post).filter(models.Post.title.contains(search)).limit(limit).offset(skip).all()
+
+    posts = db.query(models.Post, func.count(models.Vote.post_id).label('votes')).join(
+        models.Vote, models.Vote.post_id == models.Post.id, isouter=True).group_by(models.Post.id).filter(
+        models.Post.title.contains(search)).limit(limit).offset(skip).all()
+
     return posts
 
 
@@ -44,12 +51,14 @@ def create_posts(post: schema.PostCreate, db: Session = Depends(get_db),
 
 
 # getting post information with its ID
-@router.get("/{id}", response_model=schema.Post)
+@router.get("/{id}", response_model=schema.PostOut)
 def get_post(id: int, db: Session = Depends(get_db),
              current_user: int = Depends(oauth2.get_current_user)):
     # filters table with id and gets first appeared results
-    post = db.query(models.Post).filter(models.Post.id == id).first()
+    # post = db.query(models.Post).filter(models.Post.id == id).first()
 
+    post = db.query(models.Post, func.count(models.Vote.post_id).label('votes')).join(
+        models.Vote, models.Vote.post_id == models.Post.id, isouter=True).group_by(models.Post.id).filter(models.Post.id == id).first()
     # HTTP request is sent if id is not found in database
     if not post:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
